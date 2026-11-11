@@ -12,7 +12,13 @@ dist/
 coverage/
 *.vault
 *.share
+*.x12
+*.x12share
 *.key
 *.pem
 /private-data/
 /diagnostics/
+.ruff_cache/
+*.egg-info/
+/lab-report/
+/replayed-lab/

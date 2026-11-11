@@ -1,0 +1,86 @@
+{
+  "format": "x12-lab-report",
+  "version": 1,
+  "tool_version": "0.1.0",
+  "seed": 12,
+  "synthetic_only": true,
+  "fixture_sha256": "02cfd96f12ce2ed8ee1bb9ea786d709dc3950da33d6b856595e771af2080cfb4",
+  "results": [
+    {
+      "scenario": "all-10-three-of-five-quorums",
+      "passed": true
+    },
+    {
+      "scenario": "insufficient-shares",
+      "passed": true
+    },
+    {
+      "scenario": "duplicate-share",
+      "passed": true
+    },
+    {
+      "scenario": "wrong-password",
+      "passed": true
+    },
+    {
+      "scenario": "truncated-container",
+      "passed": true
+    },
+    {
+      "scenario": "modified-authentication-tag",
+      "passed": true
+    },
+    {
+      "scenario": "trailing-data",
+      "passed": true
+    },
+    {
+      "scenario": "mixed-vault-shares",
+      "passed": true
+    },
+    {
+      "scenario": "modified-share",
+      "passed": true
+    },
+    {
+      "scenario": "process-killed-before-publish",
+      "passed": true
+    },
+    {
+      "scenario": "existing-output-preserved",
+      "passed": true
+    },
+    {
+      "scenario": "concurrent-creation-and-observed-nonce-uniqueness",
+      "passed": true
+    },
+    {
+      "scenario": "restored-immutable-snapshot-readable",
+      "passed": true
+    }
+  ],
+  "counter_model_demo": {
+    "intentionally_broken": true,
+    "vault_implementation": false,
+    "original_actions": [
+      "snapshot",
+      "encrypt",
+      "encrypt",
+      "restart",
+      "snapshot",
+      "encrypt"
+    ],
+    "minimal_actions": [
+      "encrypt",
+      "restart",
+      "encrypt"
+    ],
+    "failure": "nonce-reuse-after-restart"
+  },
+  "limits": [
+    "No full-history rollback detection without an independent freshness anchor.",
+    "Replay regenerates synthetic input and experiments, not identical ciphertext.",
+    "Crash coverage is one controlled process-termination boundary, not power loss.",
+    "Counter minimization is a demonstration model, not a discovered vault defect."
+  ]
+}

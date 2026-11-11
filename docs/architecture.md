@@ -1,35 +1,31 @@
-# Architecture proposal
+# Architecture
 
-Status: proposal. Cryptographic format and library choices are not finalized.
+Status: experimental implementation v0.1.0. See [the format](format-v1.md) and [security model](../SECURITY.md).
 
-## Vault
+## Vault core
 
-Generate a fresh random data-encryption key for each immutable vault container. Use an established AEAD construction through a maintained library. Never derive the file key directly from a human password.
+`src/x12/vault.py` owns bounded parsing, AES-256-GCM and protected recovery shares. PyCryptodome provides the primitives, including Shamir over GF(2^128).
 
-The format must authenticate its version, algorithm identifier, container identifier, file metadata, chunk ordering, and completion marker where applicable. Specify key/nonce scope, maximum sizes, malformed-input handling, and truncation detection before implementing chunked encryption.
+Each immutable container has a fresh random 32-byte file key and a random 12-byte nonce. The whole file, up to 64 MiB, is one AEAD message; the prefix is associated data. There is no persisted counter or chunk update API. Source names and paths are not recorded.
 
-Create a new container for updates rather than modifying encrypted chunks in place. Write through a temporary file and use the platform's supported durability and atomic replacement mechanisms. Test interruption points explicitly; atomic rename alone is not a universal durability guarantee.
+Two independent Shamir polynomials share the two 16-byte halves at matching indices. Each participant gets both values. Independent scrypt salts derive share-wrapping keys from a common password. Share AES-GCM authenticates payloads and metadata. A password holder can create an envelope; this is not identity authentication.
 
-## Recovery
+Recovery validates all provided envelopes, rejects duplicate indices and mixed generations, reconstructs the key and verifies the file before returning plaintext. It does not automatically exclude malicious shares.
 
-Use an established Shamir secret-sharing library to divide the random file key. Each share envelope must bind its container ID, recovery generation, index, threshold, total share count, and format version. A checksum can detect accidental damage but does not authenticate a malicious share. Authenticity and encrypted share-envelope protection must be specified before release.
+## Storage and CLI
 
-Reject duplicate indices and mixed recovery generations. Final AEAD verification must reject a wrong reconstructed key. Threshold recovery reconstructs the full key on the receiving device. It is not threshold decryption or a persistent per-read approval system.
+`src/x12/storage.py` bounds reads and publishes an fsynced temporary file using an exclusive hard link. Existing files and symlinks are not replaced. Same-filesystem hard-link support is required. POSIX file mode is 0600. Durability and ACL behavior remain platform-dependent.
 
-Changing participants cannot invalidate previously copied keys, plaintext, or old share sets for old containers. New membership requires a new recovery generation; revocation for future content also requires appropriate fresh keys and distribution.
+`src/x12/cli.py` creates a new 0700 directory and writes `COMPLETE` last. This is not a multi-file transaction. Crashes can leave incomplete directories or temporary files. The source is never deleted. Recovery authenticates data before writing a plaintext temporary output.
 
-## Crash lab
+## Crash lab and reproducer
 
-Run experiments against isolated synthetic fixtures and the actual vault implementation. Planned scenarios include process termination during writes, truncated or mutated containers, loss of shares, duplicated shares, concurrent operations, and restoration of old state.
+`src/x12/lab.py` creates synthetic fixtures and runs fixed named experiments. OS/library randomness generates cryptographic material; the replay seed controls only public fixture data.
 
-The event observer must remain outside the state being rolled back when comparing activity across restoration. Observed key/nonce uniqueness is a bounded test result, not a universal proof. An offline client needs an independent freshness anchor to reliably detect a full-history rollback.
+The separate interruption worker is killed after file fsync but before publication. This tests one boundary, not physical power loss. Concurrent creation observes key hashes and nonces only in memory. Old immutable snapshots intentionally remain readable; this does not establish freshness.
 
-## Reproducer
-
-Record the fixture seed, tool version, scenario, operations, expected invariant, and observed failure. Minimize scenarios while preserving the same failure predicate. Export synthetic artifacts only by default. Do not collect real vault contents, keys, shares, environment dumps, or request bodies.
+Replay JSON supplies only a validated seed and tool version, never executable commands. Replay regenerates randomness. A deletion reducer produces 1-minimal traces for an intentionally broken nonce-counter model. Minimizing arbitrary real-vault failures and external-app instrumentation remain future work.
 
 ## Future work
 
-Cross-device share delivery may use a reviewed hybrid post-quantum protocol. KEMs do not authenticate participants on their own. Device identity, transcript binding, replay handling, and share protection must be specified as a complete protocol.
-
-True threshold decryption without reconstructing a long-term private key is a separate research milestone.
+Cross-device delivery, independent holder passwords, rekeying, streaming, an interface and hybrid post-quantum transport require separate protocol design. KEMs alone do not authenticate participants. True threshold decryption without private-key reconstruction is a separate research milestone.

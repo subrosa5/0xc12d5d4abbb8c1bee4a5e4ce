@@ -1,57 +1,111 @@
 # 0xc12d5d4abbb8c1bee4a5e4ce
 
-**A local-first threshold file vault with reproducible recovery testing.**
+**Encrypt a file. Split recovery across people. Test that recovery works.**
 
-The name looks like a key. It is only a name.
+The name looks like a key. It is only a name. The command is **`x12`**.
 
-Status: design scaffold. There is no vault implementation or installable release yet.
+Experimental CLI **v0.1.0**. Implemented and tested, but not externally audited. Use test data while the protocol is under development.
 
-[Русский](docs/README.ru.md) · [Architecture](docs/architecture.md) · [Roadmap](docs/roadmap.md) · [Security](SECURITY.md)
+[Русский](docs/README.ru.md) · [Format](docs/format-v1.md) · [Architecture](docs/architecture.md) · [Roadmap](docs/roadmap.md) · [Security](SECURITY.md)
 
-## The idea
+## Try the crash lab
 
-Encrypt a file, distribute recovery shares to people you trust, and recover it with a quorum — for example, any three of five shares. Test recovery before you need it.
+Python 3.11+ and [uv](https://docs.astral.sh/uv/) are required. Initial development targets macOS and Linux.
 
-Three parts form one project:
+```sh
+git clone https://github.com/subrosa5/0xc12d5d4abbb8c1bee4a5e4ce.git
+cd 0xc12d5d4abbb8c1bee4a5e4ce
+uv sync --locked
+uv run x12 lab --report ./lab-report
+```
 
-| Part | Planned purpose |
+This runs isolated experiments against synthetic files: all ten 3-of-5 recovery quorums, missing/duplicate/mixed/modified shares, wrong passwords, damaged containers, concurrent encryption, restored snapshots, and a real process killed before file publication. It writes readable and JSON reports.
+
+```sh
+uv run x12 replay ./lab-report/report.json --out ./replayed-lab
+```
+
+Replay regenerates synthetic input and reruns experiments. Keys and ciphertext are intentionally fresh. Reports are data, never executable instructions.
+
+The report also reduces an intentionally broken nonce-counter model to `encrypt -> restart -> encrypt`. That model is separate from the vault implementation and is explicitly identified as such.
+
+## Create a vault
+
+```sh
+uv run x12 create ./document.txt --out ./my-vault --threshold 3 --shares 5
+```
+
+You will be prompted for a recovery-share password of at least 12 UTF-8 bytes and its confirmation. The new private directory contains:
+
+```text
+my-vault/
+  vault.x12
+  share-001.x12share
+  share-002.x12share
+  share-003.x12share
+  share-004.x12share
+  share-005.x12share
+  COMPLETE
+```
+
+Distribute shares to separate holders and keep the recovery password available independently. **Leaving every share together defeats distributed custody.** This version uses one common password for all shares, with independent salts and nonces. A quorum AND that password are required. Losing the password loses access even if enough shares survive.
+
+## Recover offline
+
+```sh
+uv run x12 recover ./my-vault/vault.x12 \
+  --share ./my-vault/share-001.x12share \
+  --share ./my-vault/share-003.x12share \
+  --share ./my-vault/share-005.x12share \
+  --out ./restored.txt
+```
+
+The complete file is authenticated before any plaintext output is written. Existing destinations are never overwritten. Supply `--password-file /path/to/private-file` for automation; no password argument or environment variable is needed. The reader removes one final LF and an immediately preceding CR from password files.
+
+```sh
+uv run x12 inspect ./my-vault/vault.x12
+```
+
+`inspect` shows **unauthenticated public metadata**, not a security verdict.
+
+## What is implemented
+
+| Part | v0.1.0 |
 | --- | --- |
-| Vault | Authenticated file encryption and threshold key recovery |
-| Crash lab | Controlled failure experiments against synthetic vaults |
-| Reproducer | Minimal, replayable bug reports with synthetic fixtures |
+| Vault | AES-256-GCM, fresh per-file key, authenticated versioned header, files up to 64 MiB |
+| Recovery | Configurable 2–255 holders, Shamir key sharing, password-protected share envelopes |
+| Storage | Private files/directories on POSIX, exclusive output publication, no overwrite |
+| Crash lab | Synthetic adversarial inputs, concurrency observation, real interruption boundary |
+| Reproducer | Seeded synthetic replay and deletion reduction for a demonstration counter model |
 
-The initial interface will focus on creating a vault, recovering a vault, and testing recovery. Post-quantum transport and cross-device approvals are later research directions, not current features.
+AES-GCM, scrypt and Shamir come from [PyCryptodome](https://www.pycryptodome.org/). There are no custom cipher implementations. The container protocol and composition are experimental application code.
 
-## Planned first release
+## Limits that matter
 
-- A documented, versioned offline container format.
-- A fresh random file key and established authenticated encryption.
-- Threshold recovery using an established Shamir implementation.
-- A separate offline recovery command.
-- Tests for interrupted writes, corrupted containers, missing shares, and state restoration.
-- Reproducible failure artifacts generated from synthetic data.
-
-## Trust boundaries
-
-In the first design, the creating device holds the full file key. During recovery, a quorum of shares reconstructs it on the receiving device. A recipient can retain the key or plaintext. This is threshold recovery, not an enforceable requirement for fresh approval on every read.
-
-An offline vault cannot reliably detect replacement of its entire history with an older valid copy without an independent freshness anchor. Failure tests exercise specified scenarios; passing them does not prove complete security.
+- Recovery reconstructs the full file key on the receiving device. Recipients can retain keys or plaintext; there is no enforceable fresh approval on every read.
+- Size, quorum parameters and random identifiers are public. File names are not stored in the container.
+- All supplied shares must validate; automatic exclusion of malicious shares is not implemented.
+- A password holder can forge share envelopes; they are not participant signatures. File authentication is the final check of reconstructed content.
+- Old valid containers and old shares remain usable. Full-history rollback detection needs an independent freshness anchor.
+- Files are processed in memory. Python cannot reliably zeroize secrets. An interrupted write can leave a private `.x12-*` temporary file; recovery temporary files contain authenticated plaintext.
+- `COMPLETE` marks a fully written bundle. Failed creation can leave an incomplete directory. The source is never deleted.
+- Tests provide bounded evidence, not a security proof. Hardware power-loss behavior and cross-platform ACLs are not established by the crash experiment.
+- Post-quantum delivery, device approvals, a GUI, rekeying and external-application instrumentation are not implemented.
 
 ## Development
 
-Implementation has not started. The first milestone is a threat model and container specification, followed by a CLI prototype and a failure-testing harness. See the [roadmap](docs/roadmap.md).
+```sh
+uv sync --locked
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest -q
+```
 
-Contributions should use existing cryptographic primitives and libraries, document assumptions, and include meaningful recovery or failure cases. Do not attach real keys, recovery shares, or private files to issues.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Once dependencies are installed, vault operations and the lab need no account, cloud service, telemetry or network access.
 
 ## Related work
 
-- [rememory](https://github.com/eljojo/rememory): a digital safe with multiple keys held by trusted people.
-- [Threshold Vault](https://github.com/threshold-vault/shards-core): secret sharing and offline recovery.
-- [CRYLOGGER](https://github.com/lucapiccolboni/crylogger): dynamic cryptographic misuse detection.
-- [Wycheproof](https://github.com/C2SP/wycheproof): cryptographic test vectors.
-- [ReproZip](https://github.com/ViDA-NYU/reprozip): reproducible execution bundles.
-
-The proposed focus is integrating recovery with controlled failure experiments and reproducible diagnostics. No claim of unique invention or audited security is made.
+[rememory](https://github.com/eljojo/rememory), [Threshold Vault](https://github.com/threshold-vault/shards-core), [CRYLOGGER](https://github.com/lucapiccolboni/crylogger), [Wycheproof](https://github.com/C2SP/wycheproof), and [ReproZip](https://github.com/ViDA-NYU/reprozip) address related recovery, testing and reproducibility problems. No claim of unique invention is made.
 
 ## License
 

@@ -1,38 +1,35 @@
 # Roadmap
 
-All milestones below are planned, not implemented.
+## v0.1.0 — implemented
 
-## 0. Specify
+- [x] Describe trust boundaries, bounded format and recovery limits.
+- [x] Use PyCryptodome for AES-GCM, scrypt and Shamir.
+- [x] Create immutable containers and protected shares with configurable quorum.
+- [x] Recover offline through a separate CLI process.
+- [x] Reject corrupt, duplicate, insufficient and mixed-vault inputs.
+- [x] Exercise process termination before publication and concurrent encryption.
+- [x] Check restored immutable snapshots and no-overwrite behavior.
+- [x] Generate readable/JSON reports and replay synthetic experiments.
+- [x] Reduce an intentionally broken nonce-counter demonstration.
+- [x] Add tests and CI for Python 3.11–3.13.
 
-- [ ] Define adversaries, trust boundaries, and recovery guarantees.
-- [ ] Select maintained AEAD and Shamir libraries after review.
-- [ ] Specify the container and share-envelope formats.
-- [ ] Define memory, file-size, nonce, and malformed-input limits.
+## Next engineering milestones
 
-## 1. Offline CLI
+- [ ] Independent security review and expanded protocol vectors.
+- [ ] More interruption points and supported filesystem testing.
+- [ ] Minimize real-vault failures beyond the demonstration model.
+- [ ] Separate offline recovery distribution and interoperability fixtures.
+- [ ] Independently protected shares for different holders.
+- [ ] Versioned rekeying and holder replacement.
+- [ ] Specified streaming format beyond 64 MiB.
+- [ ] Local interface after protocol stabilization.
 
-- [ ] Create an encrypted immutable container.
-- [ ] Export protected recovery shares with configurable quorum.
-- [ ] Recover using a standalone command.
-- [ ] Verify round trips and rejection of corrupt or mismatched inputs.
+## Research milestones
 
-## 2. Failure testing
+- [ ] Authenticated cross-device delivery and approval requests.
+- [ ] Hybrid post-quantum transport with identity binding.
+- [ ] Freshness anchors to detect old valid state.
+- [ ] True threshold decryption without private-key reconstruction.
+- [ ] Adapter API for testing external applications.
 
-- [ ] Exercise termination at write boundaries and truncated files.
-- [ ] Exercise missing, duplicate, modified, and mixed-generation shares.
-- [ ] Exercise concurrent operations and state restoration.
-- [ ] Observe AEAD key/nonce use without exporting raw keys.
-
-## 3. Reproducible reports
-
-- [ ] Record deterministic synthetic scenarios.
-- [ ] Reduce failing sequences while retaining the failure.
-- [ ] Export a replay command and a human-readable report.
-- [ ] Run regression scenarios in CI.
-
-## 4. Interface and research
-
-- [ ] Add a simple local interface once the CLI format is stable.
-- [ ] Evaluate QR recovery artifacts and offline usability.
-- [ ] Design authenticated cross-device share delivery.
-- [ ] Evaluate hybrid post-quantum transport and external security review.
+Future items are not current guarantees.

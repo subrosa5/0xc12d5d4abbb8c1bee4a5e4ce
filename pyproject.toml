@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "x12-vault"
+version = "0.1.0"
+description = "Experimental threshold file vault with reproducible recovery tests"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["pycryptodome>=3.23,<4"]
+
+[project.scripts]
+x12 = "x12.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.3,<10", "ruff>=0.11,<1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/x12"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
