@@ -44,8 +44,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          python -c 'import os,re; assert re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", os.environ["RELEASE_TAG"])'
-          gh release upload "$RELEASE_TAG" dist/x12-native-*.zip dist/x12-native-*.sha256 --repo "$GITHUB_REPOSITORY"
+          uv run --group build python tools/publish_native.py "$RELEASE_TAG"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: native-${{ runner.os }}-${{ runner.arch }}
