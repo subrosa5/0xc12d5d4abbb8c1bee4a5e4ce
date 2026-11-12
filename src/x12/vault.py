@@ -160,15 +160,15 @@ class Bundle:
     shares: tuple[bytes, ...]
 
 
-def create(data: bytes, password: bytes, threshold: int = 3, total: int = 5) -> Bundle:
-    """Create a fresh immutable vault; all shares use the supplied recovery password."""
+def create(
+    data: bytes, password: bytes | list[bytes], threshold: int = 3, total: int = 5
+) -> Bundle:
+    """Create a legacy v1 vault, with either a common password or per-holder passwords."""
     _integer(total, 2, 255)
     _integer(threshold, 2, total)
     if len(data) > MAX_DATA:
         raise VaultError("Version 1 supports files up to 64 MiB")
-    # Validate the password before generating or encrypting any secret material.
-    if not isinstance(password, bytes) or not 12 <= len(password) <= 1024:
-        raise VaultError("Share password must contain 12 to 1024 UTF-8 bytes")
+    validate_passwords(password, total)
     key = secrets.token_bytes(32)
     header = {
         "format": "x12-vault",
@@ -184,12 +184,30 @@ def create(data: bytes, password: bytes, threshold: int = 3, total: int = 5) -> 
     prefix = MAGIC + struct.pack(">I", len(raw_header)) + raw_header
     nonce = secrets.token_bytes(12)
     ciphertext, tag = _seal(key, nonce, data, prefix)
+    return Bundle(prefix + nonce + ciphertext + tag, protect_shares(header, prefix, key, password))
+
+
+def validate_passwords(password: bytes | list[bytes], count: int) -> list[bytes]:
+    passwords = [password] * count if isinstance(password, bytes) else password
+    if not isinstance(passwords, list) or len(passwords) != count:
+        raise VaultError("Provide exactly one password per share, in share order")
+    for item in passwords:
+        if not isinstance(item, bytes) or not 12 <= len(item) <= 1024:
+            raise VaultError("Each share password must contain 12 to 1024 bytes")
+    return passwords
+
+
+def protect_shares(
+    header: dict[str, Any], prefix: bytes, key: bytes, password: bytes | list[bytes]
+) -> tuple[bytes, ...]:
+    threshold, total = header["threshold"], header["shares"]
+    passwords = validate_passwords(password, total)
     # PyCryptodome Shamir operates on 128-bit secrets. Independent polynomials
     # share each half of the uniformly random AES-256 key at matching indices.
     left = Shamir.split(threshold, total, key[:16])
     right = Shamir.split(threshold, total, key[16:])
-    shares = []
-    for (index, a), (other_index, b) in zip(left, right, strict=True):
+    protected = []
+    for (index, a), (other_index, b), password in zip(left, right, passwords, strict=True):
         assert index == other_index
         metadata = {
             "format": "x12-share",
@@ -208,49 +226,30 @@ def create(data: bytes, password: bytes, threshold: int = 3, total: int = 5) -> 
         encrypted, share_tag = _seal(
             wrapping_key, _unb64(metadata["nonce"], 12), a + b, canonical(metadata)
         )
-        shares.append(
+        protected.append(
             canonical({"metadata": metadata, "ciphertext": _b64(encrypted), "tag": _b64(share_tag)})
         )
-    return Bundle(prefix + nonce + ciphertext + tag, tuple(shares))
+    return tuple(protected)
 
 
-def recover(container: bytes, shares: list[bytes], password: bytes) -> bytes:
+def recover(container: bytes, shares: list[bytes], password: bytes | list[bytes]) -> bytes:
     """Authenticate every supplied share, reconstruct, then authenticate the whole file."""
     header, prefix, nonce, ciphertext, tag = inspect(container)
+    key = reconstruct_key(header, prefix, shares, password)
+    return _open(key, nonce, ciphertext, tag, prefix)
+
+
+def reconstruct_key(
+    header: dict[str, Any], prefix: bytes, shares: list[bytes], password: bytes | list[bytes]
+) -> bytes:
     if not header["threshold"] <= len(shares) <= header["shares"]:
         raise VaultError("Incorrect number of recovery shares")
+    passwords = validate_passwords(password, len(shares))
     expected_hash = hashlib.sha256(prefix).hexdigest()
     seen = set()
     left, right = [], []
-    for raw in shares:
-        if len(raw) > MAX_SHARE:
-            raise VaultError("Share exceeds size limit")
-        envelope = parse_json(raw)
-        if set(envelope) != {"metadata", "ciphertext", "tag"}:
-            raise VaultError("Unexpected share fields")
-        metadata = envelope["metadata"]
-        if type(metadata) is not dict or set(metadata) != {
-            "format",
-            "version",
-            "index",
-            "header_sha256",
-            "vault_id",
-            "recovery_id",
-            "threshold",
-            "shares",
-            "kdf",
-            "salt",
-            "nonce",
-        }:
-            raise VaultError("Invalid share metadata")
-        if (
-            metadata["format"] != "x12-share"
-            or type(metadata["version"]) is not int
-            or metadata["version"] != 1
-        ):
-            raise VaultError("Unsupported share format")
-        if metadata["kdf"] != "scrypt-N32768-r8-p1":
-            raise VaultError("Unsupported share KDF")
+    for raw, password in zip(shares, passwords, strict=True):
+        metadata, payload = unprotect_share(raw, password)
         for field in ("vault_id", "recovery_id", "threshold", "shares"):
             if type(metadata[field]) is not type(header[field]) or metadata[field] != header[field]:
                 raise VaultError("Share belongs to another vault or recovery generation")
@@ -261,15 +260,71 @@ def recover(container: bytes, shares: list[bytes], password: bytes) -> bytes:
         if index in seen:
             raise VaultError("Duplicate share index")
         seen.add(index)
-        wrapping_key = _password_key(password, _unb64(metadata["salt"], 16))
-        payload = _open(
-            wrapping_key,
-            _unb64(metadata["nonce"], 12),
-            _unb64(envelope["ciphertext"], 32),
-            _unb64(envelope["tag"], 16),
-            canonical(metadata),
-        )
         left.append((index, payload[:16]))
         right.append((index, payload[16:]))
-    key = Shamir.combine(left) + Shamir.combine(right)
-    return _open(key, nonce, ciphertext, tag, prefix)
+    return Shamir.combine(left) + Shamir.combine(right)
+
+
+def unprotect_share(raw: bytes, password: bytes) -> tuple[dict[str, Any], bytes]:
+    if len(raw) > MAX_SHARE:
+        raise VaultError("Share exceeds size limit")
+    envelope = parse_json(raw)
+    if set(envelope) != {"metadata", "ciphertext", "tag"}:
+        raise VaultError("Unexpected share fields")
+    metadata = envelope["metadata"]
+    validate_share_metadata(metadata)
+    wrapping_key = _password_key(password, _unb64(metadata["salt"], 16))
+    value = _open(
+        wrapping_key,
+        _unb64(metadata["nonce"], 12),
+        _unb64(envelope["ciphertext"], 32),
+        _unb64(envelope["tag"], 16),
+        canonical(metadata),
+    )
+    return metadata, value
+
+
+def validate_share_metadata(metadata: Any) -> None:
+    if type(metadata) is not dict or set(metadata) != {
+        "format",
+        "version",
+        "index",
+        "header_sha256",
+        "vault_id",
+        "recovery_id",
+        "threshold",
+        "shares",
+        "kdf",
+        "salt",
+        "nonce",
+    }:
+        raise VaultError("Invalid share metadata")
+    if (
+        metadata["format"] != "x12-share"
+        or type(metadata["version"]) is not int
+        or metadata["version"] != 1
+        or metadata["kdf"] != "scrypt-N32768-r8-p1"
+    ):
+        raise VaultError("Unsupported share format or KDF")
+    _hex(metadata["vault_id"], 32)
+    _hex(metadata["recovery_id"], 32)
+    _hex(metadata["header_sha256"], 64)
+    _integer(metadata["shares"], 2, 255)
+    _integer(metadata["threshold"], 2, metadata["shares"])
+    _integer(metadata["index"], 1, metadata["shares"])
+    _unb64(metadata["salt"], 16)
+    _unb64(metadata["nonce"], 12)
+
+
+def rewrap_share(metadata: dict[str, Any], value: bytes, password: bytes) -> bytes:
+    validate_share_metadata(metadata)
+    if len(value) != 32:
+        raise VaultError("Invalid share payload size")
+    updated = {
+        **metadata,
+        "salt": _b64(secrets.token_bytes(16)),
+        "nonce": _b64(secrets.token_bytes(12)),
+    }
+    wrapping_key = _password_key(password, _unb64(updated["salt"], 16))
+    encrypted, tag = _seal(wrapping_key, _unb64(updated["nonce"], 12), value, canonical(updated))
+    return canonical({"metadata": updated, "ciphertext": _b64(encrypted), "tag": _b64(tag)})

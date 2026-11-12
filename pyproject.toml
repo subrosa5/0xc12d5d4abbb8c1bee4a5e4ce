@@ -4,18 +4,21 @@ build-backend = "hatchling.build"
 
 [project]
 name = "x12-vault"
-version = "0.1.0"
+version = "0.2.0"
 description = "Experimental threshold file vault with reproducible recovery tests"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-dependencies = ["pycryptodome>=3.23,<4"]
+dependencies = ["pycryptodome>=4.4,<5"]
 
 [project.scripts]
 x12 = "x12.cli:main"
+x12-recover = "x12.recovery:main"
+x12-desktop = "x12.desktop:main"
 
 [dependency-groups]
 dev = ["pytest>=8.3,<10", "ruff>=0.11,<1"]
+build = ["pyinstaller==6.22.3"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/x12"]

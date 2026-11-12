@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0
+
+Adds streaming authenticated v2 containers, independent holder passwords, fresh-key generations, exact-version checkpoints, native desktop, standalone recovery, dual-signed device requests and layered ML-KEM/X25519 HPKE approval capsules, local replay protection, expanded crash/disk-full tests, actual recovery-trace reduction and native build workflows. Retains v1 recovery and adds a public old-version interoperability fixture. Upgrades PyCryptodome to 4.4.0. No independent audit is claimed.
+
 ## 0.1.0
 
-First experimental implementation: offline AES-256-GCM containers, protected Shamir recovery shares, exclusive file output, synthetic crash experiments and replayable reports. Adds protocol/security documentation, adversarial tests and CI. No external audit or post-quantum transport yet.
+Initial offline AES-256-GCM vault, protected Shamir shares, synthetic crash lab and replayable reports.

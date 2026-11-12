@@ -1,7 +1,7 @@
 {
   "format": "x12-lab-report",
   "version": 1,
-  "tool_version": "0.1.0",
+  "tool_version": "0.2.0",
   "seed": 12,
   "synthetic_only": true,
   "fixture_sha256": "02cfd96f12ce2ed8ee1bb9ea786d709dc3950da33d6b856595e771af2080cfb4",
@@ -47,6 +47,22 @@
       "passed": true
     },
     {
+      "scenario": "process-killed-at-opened",
+      "passed": true
+    },
+    {
+      "scenario": "process-killed-at-written",
+      "passed": true
+    },
+    {
+      "scenario": "process-killed-at-fsynced",
+      "passed": true
+    },
+    {
+      "scenario": "process-killed-at-published",
+      "passed": true
+    },
+    {
       "scenario": "existing-output-preserved",
       "passed": true
     },
@@ -56,6 +72,10 @@
     },
     {
       "scenario": "restored-immutable-snapshot-readable",
+      "passed": true
+    },
+    {
+      "scenario": "streaming-per-holder-passwords-rekey-and-checkpoint",
       "passed": true
     }
   ],
@@ -80,7 +100,7 @@
   "limits": [
     "No full-history rollback detection without an independent freshness anchor.",
     "Replay regenerates synthetic input and experiments, not identical ciphertext.",
-    "Crash coverage is one controlled process-termination boundary, not power loss.",
+    "Crash coverage: five process-termination boundaries; physical power loss is untested.",
     "Counter minimization is a demonstration model, not a discovered vault defect."
   ]
 }

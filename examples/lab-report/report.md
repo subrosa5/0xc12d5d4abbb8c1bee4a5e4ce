@@ -12,9 +12,14 @@ Fixture seed: 12
 - PASS: mixed-vault-shares
 - PASS: modified-share
 - PASS: process-killed-before-publish
+- PASS: process-killed-at-opened
+- PASS: process-killed-at-written
+- PASS: process-killed-at-fsynced
+- PASS: process-killed-at-published
 - PASS: existing-output-preserved
 - PASS: concurrent-creation-and-observed-nonce-uniqueness
 - PASS: restored-immutable-snapshot-readable
+- PASS: streaming-per-holder-passwords-rekey-and-checkpoint
 
 ## Intentionally broken counter model
 
@@ -34,5 +39,5 @@ x12 replay report.json --out ../replayed-lab
 
 - No full-history rollback detection without an independent freshness anchor.
 - Replay regenerates synthetic input and experiments, not identical ciphertext.
-- Crash coverage is one controlled process-termination boundary, not power loss.
+- Crash coverage: five process-termination boundaries; physical power loss is untested.
 - Counter minimization is a demonstration model, not a discovered vault defect.

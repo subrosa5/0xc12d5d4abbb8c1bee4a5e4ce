@@ -33,10 +33,15 @@ def _reject(action: Callable[[], object]) -> None:
     raise AssertionError("Invalid input was accepted")
 
 
-def crash_before_publish(root: Path) -> None:
+def crash_before_publish(root: Path, stage: str = "before-publish") -> None:
     """Kill a real worker at the storage publish boundary; inspect resulting files."""
+    command = (
+        [sys.executable, "__crash-worker", str(root), stage]
+        if getattr(sys, "frozen", False)
+        else [sys.executable, "-m", "x12._crash_worker", str(root), stage]
+    )
     process = subprocess.Popen(
-        [sys.executable, "-m", "x12._crash_worker", str(root)],
+        command,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -49,13 +54,20 @@ def crash_before_publish(root: Path) -> None:
             time.sleep(0.01)
         process.kill()
         process.wait(timeout=5)
-        if (root / "output").exists():
+        if stage != "published" and (root / "output").exists():
             raise AssertionError("Interrupted write published a destination")
         leftovers = list(root.glob(".x12-*"))
-        if len(leftovers) != 1 or leftovers[0].read_bytes() != b"synthetic crash fixture":
+        if len(leftovers) != 1:
             raise AssertionError("Unexpected staged-write state")
-        atomic_write(root / "output", b"synthetic retry fixture")
-        if (root / "output").read_bytes() != b"synthetic retry fixture":
+        if stage in {"fsynced", "before-publish", "published"}:
+            if leftovers[0].read_bytes() != b"synthetic crash fixture":
+                raise AssertionError("Fsynced temporary file lost data")
+        if stage == "published":
+            if (root / "output").read_bytes() != b"synthetic crash fixture":
+                raise AssertionError("Published output was incomplete")
+        else:
+            atomic_write(root / "output", b"synthetic retry fixture")
+        if stage != "published" and (root / "output").read_bytes() != b"synthetic retry fixture":
             raise AssertionError("Retry after interruption failed")
     finally:
         if process.poll() is None:
@@ -182,6 +194,13 @@ def run_lab(output: Path, seed: int = 12) -> int:
             crash_before_publish(Path(temporary))
 
     check("process-killed-before-publish", interrupted_write)
+    for stage in ("opened", "written", "fsynced", "published"):
+
+        def interrupted_at(selected=stage):
+            with tempfile.TemporaryDirectory(prefix="x12-lab-") as temporary:
+                crash_before_publish(Path(temporary), selected)
+
+        check(f"process-killed-at-{stage}", interrupted_at)
 
     def exclusive_output() -> None:
         with tempfile.TemporaryDirectory(prefix="x12-lab-") as temporary:
@@ -241,6 +260,30 @@ def run_lab(output: Path, seed: int = 12) -> int:
                 raise AssertionError("Restored immutable snapshot failed recovery")
 
     check("restored-immutable-snapshot-readable", restored_snapshot)
+
+    def stream_generation() -> None:
+        from x12.streaming import checkpoint_file, create_file, recover_file, rekey_file
+
+        with tempfile.TemporaryDirectory(prefix="x12-lab-v2-") as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.write_bytes(data)
+            passwords = [b"synthetic-holder-one-password", b"synthetic-holder-two-password"]
+            create_file(source, root / "bundle", passwords, 2, 2)
+            vault = root / "bundle/vault.x12"
+            shares = [(root / f"bundle/share-{i:03d}.x12share").read_bytes() for i in (1, 2)]
+            checkpoint_file(vault, root / "external.checkpoint")
+            recover_file(vault, shares, passwords, root / "recovered", root / "external.checkpoint")
+            if (root / "recovered").read_bytes() != data:
+                raise AssertionError("Stream recovery changed the fixture")
+            rekey_file(vault, shares, passwords, root / "new", LAB_PASSWORD, 2, 2)
+            new_shares = [(root / f"new/share-{i:03d}.x12share").read_bytes() for i in (1, 2)]
+            recover_file(root / "new/vault.x12", new_shares, LAB_PASSWORD, root / "new-restored")
+            if (root / "new-restored").read_bytes() != data:
+                raise AssertionError("Rekeying changed the fixture")
+            _reject(lambda: recover_file(root / "new/vault.x12", shares, passwords, root / "old"))
+
+    check("streaming-per-holder-passwords-rekey-and-checkpoint", stream_generation)
     original = ["snapshot", "encrypt", "encrypt", "restart", "snapshot", "encrypt"]
     reduced = minimize(original, nonce_reuse)
     report = {
@@ -261,7 +304,7 @@ def run_lab(output: Path, seed: int = 12) -> int:
         "limits": [
             "No full-history rollback detection without an independent freshness anchor.",
             "Replay regenerates synthetic input and experiments, not identical ciphertext.",
-            "Crash coverage is one controlled process-termination boundary, not power loss.",
+            "Crash coverage: five process-termination boundaries; physical power loss is untested.",
             "Counter minimization is a demonstration model, not a discovered vault defect.",
         ],
     }

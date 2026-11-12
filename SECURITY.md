@@ -1,39 +1,43 @@
-# Security model and reporting
+# Security model v0.2.0
 
-Version 0.1.0 is experimental. The container composition has not received an independent audit. Initial development targets macOS and Linux. Use synthetic data during evaluation.
+Experimental software. The container and device protocol compositions have not received independent security review. [Review materials](docs/audit-readiness.md) are prepared; they are not an audit report.
 
-## Assets and trust
+## Trust and assets
 
-Assets are plaintext, random AES file keys, recovery shares and passwords. The design aims to protect contents from someone possessing a container without a quorum of valid shares and the recovery password. Fewer than the threshold number of decrypted Shamir shares should not reveal the uniformly random file key under the secret-sharing assumptions.
+Protect plaintext, random AES file keys, recovery shares, passwords and device identity keys. Creating and recovering devices see full file keys/plaintext. The OS, Python/runtime, PyCryptodome, dependency supply chain, CSPRNG and filesystem are trusted. A quorum of decrypted Shamir shares reconstructs the file key. The application does not implement true threshold decryption or perpetual per-read consent.
 
-The creating and recovering devices are trusted with full keys and plaintext. The OS, Python runtime, PyCryptodome, dependencies and CSPRNG are trusted. The filesystem must support exclusive hard-link publication.
+## Container and recovery checks
 
-## Implemented checks
+AES-GCM authenticates the full prefix, indexed chunk records and completion marker. Each generation uses a fresh file key. V2 is bounded to 1 TiB, with fixed 1 MiB chunks and bounded memory. V1 retains its original 64 MiB memory bound. Strict schemas, parameter/encoding limits, duplicate-index checks and exact generation binding reject malformed input. Every supplied share must be valid; malicious participants can deny recovery. The tool does not automatically try all subsets.
 
-- AES-256-GCM authenticates file content and its complete versioned prefix.
-- Share AES-GCM authenticates payload and metadata with a password-derived key.
-- Parsing bounds lengths and parameters, rejects duplicate fields, malformed encodings, trailing data, mixed headers and repeated share indices.
-- Plaintext output is created only after full file authentication.
-- Existing output files and symlinks are never replaced.
-- POSIX output files use 0600; bundle directories use 0700.
-- Reports use synthetic data and never execute JSON-supplied commands.
+Each share may use an independent password and salt. Offline guessing against a stolen envelope remains possible; scrypt increases cost, but weak/lost passwords are not repaired by secret sharing. Share envelopes are authenticated by their password, not participant signatures. Final file authentication rejects incorrect reconstruction.
 
-## Limits
+## Storage and crash limits
 
-- The common password is an additional recovery dependency. Losing it loses access. Offline guessing against a stolen share is possible; scrypt cannot fix weak passwords.
-- Password holders can forge envelopes. These are not participant signatures. Malicious shares can deny recovery; all supplied shares must pass. Final file AEAD verification prevents unauthenticated plaintext output.
-- A quorum can retain recovered keys/plaintext. There is no persistent per-read approval, remote erasure or revocation of old copies.
-- Old containers/share sets remain valid. Integrity checks cannot establish freshness of an entirely restored valid history.
-- Compromised endpoints, malware, screen capture, swap, core dumps, malicious dependencies and side-channel attacks are outside the boundary. Python cannot reliably zeroize secret buffers.
-- Size and quorum metadata are public. Source names are not stored, but CLI paths may remain in shell history.
-- Abrupt termination can leave private `.x12-*` temporary files; recovery temporaries contain authenticated plaintext. Secure deletion is not promised.
-- Creation is not a multi-file transaction. `COMPLETE` is written last. Incomplete directories are not complete backups, and sources are never deleted.
-- Files are loaded into memory, with a 64 MiB limit. There is no streaming or in-place update.
-- Crash tests cover specific scenarios, not all interruption points, hardware power loss, unknown platforms or absolute security.
-- The intentionally broken nonce-counter demo is not used by the vault. Fixture seeds never seed cryptographic randomness.
+Exclusive hard-link publication never replaces an existing destination, including symlinks. POSIX files are 0600 and bundle directories 0700. The filesystem must support the operation. A container and its shares are not one filesystem transaction: COMPLETE is written last. Sources are retained. Interrupted creation can leave an incomplete directory.
+
+V2 verifies each chunk before writing it to a private temporary file; the final path is published only after the completion tag and EOF validate. A crash can leave authenticated plaintext chunks in .x12-* temporaries. Secure deletion and reliable Python memory zeroization are not provided. Swap, core dumps and screen capture are host concerns.
+
+Five controlled process-termination boundaries and simulated disk errors are tested. They do not certify physical power-loss durability, every filesystem/ACL configuration or a hostile endpoint. Source changes detected during creation/rekey cause rejection; this is not a snapshot service against a malicious OS.
+
+## Version changes and checkpoints
+
+Rekeying creates a new file key, recovery ID, shares and version lineage. Old shares do not unlock the new generation. Old copied containers, keys and plaintext remain valid; revocation cannot erase them.
+
+An independently retained checkpoint commits to exact container bytes. Recovery checks the bytes actually consumed before publication. Checkpoints do not authenticate unknown input or determine global latest state. An attacker who rolls back both a vault and its trusted checkpoint can bypass this local protection.
+
+## Device handoff
+
+Fingerprints must be independently verified by users. Device identities represent key possession, not certified real-world identities. Both Ed25519 and ML-DSA-65 signatures are required. Share values use nested library HPKE with ML-KEM-768 and X25519. Fixed context strings and signed metadata bind request, sender, recipient, expiry and encapsulations. This application composition is experimental; no FIPS validation or audited messaging-protocol claim is made.
+
+Releasing a share requires explicit confirmation. The receiver rewraps it under a local password; holder passwords are not transferred. Valid requests expire within one hour under a trusted local wall clock. Stored capsules lack forward secrecy against later recipient identity compromise.
+
+The requester ledger consumes a request before publication. Output failure afterward requires a fresh request. Rolling back the ledger can undo replay protection; keep it independent of rolled-back vault storage. No global revocation or distributed replay service is implemented. The software does not send messages to other people itself.
+
+## Diagnostics and dependencies
+
+Lab/reducer inputs are fixed synthetic fixtures. Reports contain no user vaults, keys, passwords, environment dumps or commands to execute. Expected rejection of corruption is not labeled a vulnerability. Fixture seeds never seed cryptographic randomness. Native executables bundle a runtime and crypto library; verify their provenance. They are not Developer-ID signed/notarized.
 
 ## Reporting
 
-Use GitHub private vulnerability reporting if enabled. Never post real keys, shares, passwords, plaintext or personal data in public issues. If private reporting is unavailable, request a private contact route without publishing exploit details.
-
-Include the version, affected component, expected property and a synthetic reproducer. A passing lab report is not a security certificate.
+Use GitHub private vulnerability reporting if available. Never post real keys, shares, passwords or private files in public issues. If unavailable, request a private contact route without exposing exploit details. Include the version, expected property and a synthetic reproducer.

@@ -55,6 +55,11 @@ def test_process_death_before_publish(tmp_path: Path):
     assert (tmp_path / "output").read_bytes() == b"synthetic retry fixture"
 
 
+@pytest.mark.parametrize("stage", ["opened", "written", "fsynced", "published"])
+def test_process_death_at_other_boundaries(tmp_path, stage):
+    crash_before_publish(tmp_path, stage)
+
+
 def test_concurrent_publish_has_exactly_one_winner(tmp_path):
     target = tmp_path / "shared-output"
 
