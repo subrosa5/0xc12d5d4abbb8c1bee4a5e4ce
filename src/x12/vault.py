@@ -188,6 +188,7 @@ def create(
 
 
 def validate_passwords(password: bytes | list[bytes], count: int) -> list[bytes]:
+    _integer(count, 2, 255)
     passwords = [password] * count if isinstance(password, bytes) else password
     if not isinstance(passwords, list) or len(passwords) != count:
         raise VaultError("Provide exactly one password per share, in share order")

@@ -10,7 +10,7 @@ from pathlib import Path
 from x12 import __version__
 from x12.storage import read_bounded
 from x12.streaming import recover_file
-from x12.vault import MAX_SHARE
+from x12.vault import MAX_SHARE, _integer
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,6 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     group.add_argument("--share-password-file", type=Path, action="append")
     args = parser.parse_args(argv)
     try:
+        _integer(len(args.share), 2, 255)
         files = args.share_password_file
         if args.password_file:
             files = [args.password_file] * len(args.share)

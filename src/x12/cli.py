@@ -12,7 +12,7 @@ from pathlib import Path
 from x12 import __version__
 from x12.storage import read_bounded
 from x12.streaming import checkpoint_file, create_file, inspect_file, recover_file, rekey_file
-from x12.vault import MAX_SHARE, VaultError
+from x12.vault import MAX_SHARE, VaultError, _integer
 
 
 def _password(args: argparse.Namespace, confirm: bool = False) -> bytes:
@@ -32,6 +32,7 @@ def _read_password(path: Path) -> bytes:
 
 
 def _recovery_passwords(args: argparse.Namespace) -> bytes | list[bytes]:
+    _integer(len(args.share), 2, 255)
     if args.share_password_file:
         return [_read_password(p) for p in args.share_password_file]
     if args.per_holder:
@@ -40,6 +41,8 @@ def _recovery_passwords(args: argparse.Namespace) -> bytes | list[bytes]:
 
 
 def _creation_passwords(args: argparse.Namespace, *, new: bool = False) -> bytes | list[bytes]:
+    _integer(args.shares, 2, 255)
+    _integer(args.threshold, 2, args.shares)
     files = args.new_holder_password_file if new else args.holder_password_file
     individual = args.new_per_holder if new else args.per_holder
     password_file = args.new_password_file if new else args.password_file

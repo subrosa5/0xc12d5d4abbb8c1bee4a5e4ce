@@ -161,3 +161,11 @@ def test_noncanonical_or_invalid_headers(bundle):
     raw = json.dumps(header, indent=2).encode()
     with pytest.raises(VaultError, match="canonical"):
         inspect(MAGIC + struct.pack(">I", len(raw)) + raw + tail)
+
+
+@pytest.mark.parametrize("count", [0, 1, 256, True])
+def test_password_expansion_rejects_unbounded_holder_counts(count):
+    from x12.vault import validate_passwords
+
+    with pytest.raises(VaultError):
+        validate_passwords(PASSWORD, count)
