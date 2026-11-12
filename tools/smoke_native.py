@@ -17,7 +17,7 @@ cli, recovery = args.cli.resolve(), args.recover.resolve()
 root = Path(__file__).resolve().parent.parent
 
 
-def run(binary: Path, *arguments: str) -> None:
+def run(binary: Path, *arguments: str) -> str:
     environment = {
         key: value
         for key, value in os.environ.items()
@@ -33,6 +33,7 @@ def run(binary: Path, *arguments: str) -> None:
     )
     if result.returncode:
         raise RuntimeError(f"Packaged command failed: {result.stderr}")
+    return result.stdout.strip()
 
 
 with tempfile.TemporaryDirectory(prefix="x12-native-") as temporary:
@@ -113,7 +114,89 @@ with tempfile.TemporaryDirectory(prefix="x12-native-") as temporary:
     password.write_bytes(vector["password"].encode())
     run(recovery, old, *old_shares, "--password-file", password, "--out", work / "legacy-restored")
     assert (work / "legacy-restored").read_bytes() == base64.b64decode(vector["plaintext"])
+
+    requester, holder = work / "requester", work / "holder"
+    run(cli, "identity", "--out", requester, "--password-file", passwords[0])
+    run(cli, "identity", "--out", holder, "--password-file", passwords[1])
+    requester_pin = run(cli, "fingerprint", requester / "identity.public.json")
+    holder_pin = run(cli, "fingerprint", holder / "identity.public.json")
+    request, state = work / "request.json", work / "state.sqlite"
+    capsule, received = work / "approval.json", work / "received-share"
+    run(
+        cli,
+        "request",
+        "--identity",
+        requester / "identity.private.json",
+        "--password-file",
+        passwords[0],
+        "--peer-public",
+        holder / "identity.public.json",
+        "--peer-fingerprint",
+        holder_pin,
+        "--vault",
+        bundle / "vault.x12",
+        "--state",
+        state,
+        "--out",
+        request,
+    )
+    run(
+        cli,
+        "approve",
+        "--identity",
+        holder / "identity.private.json",
+        "--password-file",
+        passwords[1],
+        "--peer-public",
+        requester / "identity.public.json",
+        "--peer-fingerprint",
+        requester_pin,
+        "--request",
+        request,
+        "--share",
+        bundle / "share-001.x12share",
+        "--share-password-file",
+        passwords[0],
+        "--confirm",
+        "--out",
+        capsule,
+    )
+    run(
+        cli,
+        "receive",
+        "--identity",
+        requester / "identity.private.json",
+        "--password-file",
+        passwords[0],
+        "--peer-public",
+        holder / "identity.public.json",
+        "--peer-fingerprint",
+        holder_pin,
+        "--request",
+        request,
+        "--capsule",
+        capsule,
+        "--state",
+        state,
+        "--new-password-file",
+        passwords[1],
+        "--out",
+        received,
+    )
+    run(
+        recovery,
+        bundle / "vault.x12",
+        "--share",
+        received,
+        "--share",
+        bundle / "share-002.x12share",
+        "--password-file",
+        passwords[1],
+        "--out",
+        work / "handoff-restored",
+    )
+    assert (work / "handoff-restored").read_bytes() == source.read_bytes()
     run(cli, "lab", "--report", work / "lab")
     if args.desktop:
         run(args.desktop.resolve(), "--smoke-test")
-print("Native CLI, recovery, rotation, legacy vector and crash lab passed.")
+print("Native CLI, recovery, rotation, v1, PQC device handoff, GUI and crash lab passed.")

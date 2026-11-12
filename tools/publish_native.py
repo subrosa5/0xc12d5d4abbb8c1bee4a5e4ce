@@ -38,4 +38,6 @@ for path in sorted(Path("dist").glob("x12-native-*.zip")):
     artifacts.extend([str(path), str(checksum)])
 if not artifacts:
     raise SystemExit("No verified native archives")
-subprocess.run(["gh", "release", "upload", tag, *artifacts, "--repo", repository], check=True)
+subprocess.run(
+    ["gh", "release", "upload", tag, *artifacts, "--repo", repository, "--clobber"], check=True
+)
