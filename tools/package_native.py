@@ -5,6 +5,7 @@ import platform
 import subprocess
 import sys
 import zipfile
+from hashlib import sha256
 from importlib.metadata import distribution
 from pathlib import Path
 
@@ -65,3 +66,6 @@ with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
         if source.is_file():
             archive.write(source, f"third-party-licenses/runtime-{index}-{source.name}")
 print(destination)
+destination.with_suffix(".sha256").write_text(
+    f"{sha256(destination.read_bytes()).hexdigest()}  {destination.name}\n"
+)
